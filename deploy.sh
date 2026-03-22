@@ -63,36 +63,39 @@ mkdir -p dist
 python3 -c "
 import re, sys
 
-css_file  = sys.argv[1]
-js_file   = sys.argv[2]
-webp_file = sys.argv[3]
-png_file  = sys.argv[4]
+bucket    = sys.argv[1]
+css_file  = sys.argv[2]
+js_file   = sys.argv[3]
+webp_file = sys.argv[4]
+png_file  = sys.argv[5]
 
 with open('index.html') as f:
     html = f.read()
 
 # Replace inline <style>...</style> with <link>
+base = 'https://storage.googleapis.com/' + bucket + '/'
+
 html = re.sub(
     r'<style>.*?</style>',
-    '<link rel=\"stylesheet\" href=\"/' + css_file + '\">',
+    '<link rel=\"stylesheet\" href=\"' + base + css_file + '\">',
     html, flags=re.DOTALL
 )
 
 # Replace inline <script>...</script> (not CDN) with external <script src>
 html = re.sub(
     r'<script>.*?</script>',
-    '<script src=\"/' + js_file + '\"></script>',
+    '<script src=\"' + base + js_file + '\"></script>',
     html, flags=re.DOTALL
 )
 
 # Replace image references
-html = html.replace('revolver.webp', '/' + webp_file)
-html = html.replace('revolver.png',  '/' + png_file)
+html = html.replace('revolver.webp', base + webp_file)
+html = html.replace('revolver.png',  base + png_file)
 
 with open('dist/index.html', 'w') as f:
     f.write(html)
 print('  ✅ dist/index.html written')
-" "$CSS_FILE" "$JS_FILE" "$WEBP_FILE" "$PNG_FILE"
+" "$BUCKET" "$CSS_FILE" "$JS_FILE" "$WEBP_FILE" "$PNG_FILE"
 
 # ── 5. Upload index.html with no-cache ───────────────────────────────────────
 echo ""
