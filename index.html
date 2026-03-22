@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Interrogation</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body { background: #000; overflow: hidden; font-family: 'Georgia', serif; color: #c0c0cc; }
+
+  #canvas-container { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  /* ── UI OVERLAY ── */
+  #ui {
+    position: fixed; inset: 0; pointer-events: none;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 18px 22px; gap: 10px;
+  }
+
+  #dialogue {
+    pointer-events: none;
+    background: rgba(8, 8, 12, 0.87);
+    border: 1px solid #28282e;
+    border-left: 3px solid #b04040;
+    padding: 14px 18px;
+    max-width: 580px;
+    backdrop-filter: blur(4px);
+  }
+
+  #narrative-text {
+    color: #b8b8c8; font-size: 0.88rem; line-height: 1.65;
+    margin-bottom: 0; transition: opacity 0.4s ease;
+  }
+  #narrative-text.fade { opacity: 0; }
+  #narrative-text.has-dravek { margin-bottom: 10px; }
+
+  #dravek-line {
+    display: none;
+    padding: 8px 12px;
+    border-left: 2px solid #2a5068;
+    background: rgba(14, 26, 40, 0.65);
+    margin-top: 10px;
+  }
+  .dravek-label {
+    font-size: 0.61rem; letter-spacing: 0.28em;
+    color: #7aaec8; display: block;
+    margin-bottom: 4px; font-weight: bold;
+  }
+  .dravek-speech { color: #98c0d8; font-style: italic; font-size: 0.89rem; line-height: 1.58; }
+
+  #controls {
+    pointer-events: all;
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  }
+
+  /* chambers */
+  #chamber-display { display: flex; flex-direction: column; gap: 5px; }
+  .chamber-label {
+    font-size: 0.61rem; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #505060;
+  }
+  .chambers { display: flex; gap: 7px; }
+  .chamber {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 2px solid #383840; background: #28282e;
+    position: relative; transition: all 0.3s ease;
+  }
+  .chamber::after {
+    content: ''; position: absolute; inset: 5px;
+    border-radius: 50%; background: #111114; transition: all 0.3s ease;
+  }
+  .chamber.loaded {
+    border-color: #c8a840;
+    background: radial-gradient(circle at 40% 35%, #e8c860, #a08028);
+    box-shadow: 0 0 8px rgba(200,168,64,0.5);
+  }
+  .chamber.loaded::after { background: radial-gradient(circle at 40% 35%, #f0d870, #c09030); }
+  .chamber.fired { border-color: #383840; background: #111114; opacity: 0.4; }
+  .chamber.fired::after { background: #080810; }
+  .chamber.current { border-color: #e05050; box-shadow: 0 0 10px rgba(224,80,80,0.4), 0 0 20px rgba(224,80,80,0.15); }
+
+  /* stats */
+  .stats { display: flex; gap: 20px; }
+  .stat { text-align: center; }
+  .stat-val { font-size: 1.35rem; color: #c8a840; line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat-val.danger { color: #e05050; }
+  .stat-label { font-size: 0.59rem; letter-spacing: 0.18em; text-transform: uppercase; color: #505060; }
+
+  /* trigger button */
+  .trigger-btn {
+    padding: 14px 30px;
+    background: linear-gradient(135deg, #6a1a1a, #3a0a0a);
+    border: 1px solid #b04040; color: #e8c8c8;
+    font-family: 'Georgia', serif; font-size: 0.95rem;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 20px rgba(176,64,64,0.3);
+  }
+  .trigger-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #7a2020, #4a1010);
+    box-shadow: 0 4px 28px rgba(176,64,64,0.5);
+    transform: translateY(-1px);
+  }
+  .trigger-btn:active:not(:disabled) { transform: translateY(1px); }
+  .trigger-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .odds-info { font-size: 0.69rem; color: #505060; letter-spacing: 0.08em; margin-top: 6px; }
+  .odds-info span { color: #e05050; font-weight: bold; }
+
+  /* title bar */
+  #look-hint {
+    position: fixed;
+    bottom: 140px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,220,130,0.75);
+    font-size: 0.8rem;
+    font-family: 'Georgia', serif;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    z-index: 50;
+    transition: opacity 0.5s;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+  }
+  #brightness-ctrl {
+    position: fixed;
+    top: 12px;
+    right: 16px;
+    color: #ffe080;
+    font-size: 0.82rem;
+    font-family: 'Georgia', serif;
+    letter-spacing: 0.05em;
+    opacity: 0.85;
+    z-index: 50;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #brightness-ctrl button {
+    background: rgba(255,224,128,0.15);
+    border: 1px solid rgba(255,224,128,0.4);
+    color: #ffe080;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 7px;
+    border-radius: 3px;
+  }
+  #brightness-ctrl button:hover {
+    background: rgba(255,224,128,0.3);
+  }
+  #title-bar {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    text-align: center; pointer-events: none; z-index: 10;
+  }
+  .game-title {
+    font-size: clamp(1.1rem, 2.8vw, 1.75rem);
+    letter-spacing: 0.28em; text-transform: uppercase;
+    color: #e05050; font-weight: normal;
+    text-shadow: 0 0 24px rgba(176,64,64,0.45), 0 0 48px rgba(176,64,64,0.2);
+  }
+  .game-subtitle {
+    color: #505060; font-size: 0.68rem;
+    letter-spacing: 0.26em; text-transform: uppercase; margin-top: 3px;
+  }
+
+  /* flash / blood / red-fill */
+  #flash {
+    position: fixed; inset: 0; background: #fff;
+    opacity: 0; pointer-events: none; z-index: 200;
+  }
+  @keyframes gunflash { 0% { opacity: 0.88; } 100% { opacity: 0; } }
+  #flash.bang { animation: gunflash 0.28s ease-out forwards; }
+
+  #blood {
+    position: fixed; inset: 0; pointer-events: none; z-index: 90;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(140,0,0,0.7) 0%, transparent 50%),
+      radial-gradient(ellipse at 70% 30%, rgba(100,0,0,0.5) 0%, transparent 40%),
+      radial-gradient(ellipse at 50% 10%, rgba(160,0,0,0.6) 0%, transparent 45%);
+    opacity: 0; transition: opacity 0.55s ease;
+  }
+  #blood.show { opacity: 1; }
+
+  /* outcome overlay */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.93);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 300; padding: 24px;
+    opacity: 0; pointer-events: none; transition: opacity 0.65s ease;
+  }
+  .overlay.visible { opacity: 1; pointer-events: all; }
+  .overlay-inner {
+    max-width: 420px; text-align: center;
+    display: flex; flex-direction: column;
+    gap: 20px; align-items: center;
+  }
+  .outcome-title {
+    font-size: clamp(2rem, 8vw, 3.2rem);
+    letter-spacing: 0.12em; text-transform: uppercase; font-weight: normal; line-height: 1.1;
+  }
+  .outcome-title.dead { color: #e05050; text-shadow: 0 0 30px rgba(176,64,64,0.5); }
+  .outcome-title.alive { color: #40a080; text-shadow: 0 0 30px rgba(64,160,128,0.5); }
+  .outcome-story {
+    color: #b8b8c8; font-size: 0.95rem; line-height: 1.72;
+    max-width: 360px; text-align: left;
+  }
+  .dravek-block-out {
+    display: block; margin-top: 10px; padding: 9px 13px;
+    border-left: 2px solid #2a5068; background: rgba(14,26,40,0.65);
+  }
+  .outcome-stats-box {
+    display: flex; gap: 32px; padding: 14px 24px;
+    border: 1px solid #28282e; background: #141416;
+  }
+  .play-again {
+    padding: 12px 34px; background: transparent;
+    border: 1px solid #c8a840; color: #c8a840;
+    font-family: 'Georgia', serif; font-size: 0.84rem;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .play-again:hover { background: rgba(200,168,64,0.1); box-shadow: 0 0 16px rgba(200,168,64,0.2); }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="flash"></div>
+<div id="blood"></div>
+
+<div id="title-bar">
+  <div class="game-title">The Interrogation</div>
+  <div class="game-subtitle">Room 4 &mdash; One bullet &mdash; No way out</div>
+</div>
+<div id="look-hint">🖱 Click to look around &nbsp;·&nbsp; ESC to release</div>
+<div id="brightness-ctrl">
+  <button onclick="adjustBrightness(-1)" title="Dim">&#9660;</button>
+  &#128161; <span id="brightness-val">14%</span>
+  <button onclick="adjustBrightness(1)" title="Brighten">&#9650;</button>
+  <span style="opacity:0.5;font-size:0.75rem">&nbsp;[ &#8595; / &#8593; ]</span>
+</div>
+
+<div id="ui">
+  <div id="dialogue">
+    <div id="narrative-text"></div>
+    <div id="dravek-line">
+      <span class="dravek-label">COLONEL DRAVEK</span>
+      <em class="dravek-speech" id="dravek-speech-text"></em>
+    </div>
+  </div>
+  <div id="controls">
+    <div id="chamber-display">
+      <div class="chamber-label">Cylinder</div>
+      <div class="chambers" id="chambers"></div>
+    </div>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-val" id="statPull">0</div>
+        <div class="stat-label">Pulls</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val danger" id="statOdds">1 in 6</div>
+        <div class="stat-label">Odds</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="statSurvived">0</div>
+        <div class="stat-label">Survived</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:0;">
+      <button class="trigger-btn" id="triggerBtn" onclick="pullTrigger()">Pull Trigger</button>
+      <div class="odds-info">Death probability: <span id="chanceText">16.7%</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-inner">
+    <div class="outcome-title" id="outcomeTitle"></div>
+    <div class="outcome-story" id="outcomeStory"></div>
+    <div class="outcome-stats-box stats">
+      <div class="stat">
+        <div class="stat-val" id="finalPulls">0</div>
+        <div class="stat-label">Pulls</div>
+      </div>
+      <div class="stat">
+        <div class="stat-val" id="finalOdds">0%</div>
+        <div class="stat-label">Survived odds</div>
+      </div>
+    </div>
+    <button class="play-again" onclick="newGame()">New Session</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  THREE.JS SCENE
+// ═══════════════════════════════════════════════════════════════════════════
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x08080c);
+scene.fog = new THREE.Fog(0x08080c, 9, 22);
+
+// First-person camera — eye level, looking across table at Dravek
+const camera = new THREE.PerspectiveCamera(52, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.55, 2.1);
+camera.rotation.order = 'YXZ';
+scene.add(camera); // needed so camera children render
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.NoToneMapping;
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ── LIGHTING ────────────────────────────────────────────────────────────────
+
+const ambient = new THREE.AmbientLight(0x8899aa, 0.4);
+scene.add(ambient);
+
+const bulbLight = new THREE.PointLight(0xffe080, 2.5, 18, 1);
+bulbLight.position.set(0, 3.6, -0.4);
+bulbLight.castShadow = true;
+bulbLight.shadow.mapSize.width = 1024;
+bulbLight.shadow.mapSize.height = 1024;
+bulbLight.shadow.camera.near = 0.1;
+bulbLight.shadow.camera.far = 16;
+bulbLight.shadow.bias = -0.002;
+scene.add(bulbLight);
+
+const fillLight = new THREE.PointLight(0x6688aa, 0.8, 20, 1);
+fillLight.position.set(0, 2, 8);
+scene.add(fillLight);
+
+const bulbMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.09, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xfff0a0 })
+);
+bulbMesh.position.copy(bulbLight.position);
+scene.add(bulbMesh);
+
+const cord = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.012, 0.012, 0.42, 4),
+  new THREE.MeshBasicMaterial({ color: 0x1a1a1a })
+);
+cord.position.set(0, 3.83, -0.4);
+scene.add(cord);
+
+// ── ROOM ────────────────────────────────────────────────────────────────────
+
+// ── Procedural iron/rust texture ────────────────────────────────────────────
+function makeIronTexture(width=512, height=512) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  // Base dark iron colour
+  ctx.fillStyle = '#2e2e32';
+  ctx.fillRect(0, 0, width, height);
+
+  // Subtle panel lines (horizontal + vertical riveted plates)
+  ctx.strokeStyle = '#1a1a1e';
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.6;
+  for (let y = 0; y < height; y += 128) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke(); }
+  for (let x = 0; x < width;  x += 128) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke(); }
+
+  // Rivet dots at panel corners
+  ctx.fillStyle = '#3a3a40';
+  ctx.globalAlpha = 0.9;
+  for (let y = 0; y < height; y += 128) {
+    for (let x = 0; x < width; x += 128) {
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Rust streaks
+  const rustColors = ['#6b3a1f','#7a4422','#5a2e10','#8b4a28'];
+  for (let i = 0; i < 40; i++) {
+    const x     = Math.random() * width;
+    const y     = Math.random() * height * 0.6;
+    const len   = 20 + Math.random() * 80;
+    const color = rustColors[Math.floor(Math.random() * rustColors.length)];
+    const grad  = ctx.createLinearGradient(x, y, x + (Math.random()-0.5)*10, y + len);
+    grad.addColorStop(0, color);
+    grad.addColorStop(1, 'transparent');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth   = 1 + Math.random() * 3;
+    ctx.globalAlpha = 0.15 + Math.random() * 0.2;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (Math.random()-0.5)*6, y + len); ctx.stroke();
+  }
+
+  // Scratches
+  for (let i = 0; i < 30; i++) {
+    const x1 = Math.random() * width,  y1 = Math.random() * height;
+    const x2 = x1 + (Math.random()-0.5)*60, y2 = y1 + (Math.random()-0.5)*20;
+    ctx.strokeStyle = '#555560';
+    ctx.lineWidth   = 0.5;
+    ctx.globalAlpha = 0.2 + Math.random() * 0.2;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(3, 2);
+  return tex;
+}
+
+const ironTex     = makeIronTexture();
+const concreteMat = new THREE.MeshStandardMaterial({ map: ironTex, color: 0x888899, roughness: 0.7, metalness: 0.6 });
+const brickMat    = new THREE.MeshStandardMaterial({ map: ironTex, color: 0x888899, roughness: 0.7, metalness: 0.6 });
+const ceilingMat  = new THREE.MeshStandardMaterial({ map: ironTex, color: 0x777788, roughness: 0.75, metalness: 0.55 });
+
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), concreteMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), ceilingMat);
+ceil.rotation.x = Math.PI / 2;
+ceil.position.y = 4.0;
+scene.add(ceil);
+
+function wall(w, h, x, y, z, ry) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), brickMat.clone());
+  m.position.set(x, y, z); m.rotation.y = ry; m.receiveShadow = true;
+  scene.add(m);
+}
+wall(16, 4, 0, 2, -8, 0);
+wall(16, 4, 0, 2, 8, Math.PI);
+wall(16, 4, -8, 2, 0, Math.PI/2);
+wall(16, 4, 8, 2, 0, -Math.PI/2);
+
+// ── TABLE ───────────────────────────────────────────────────────────────────
+
+// ── Procedural wood texture ─────────────────────────────────────────────────
+function makeWoodTexture(baseColor, grainColor, width=512, height=512) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  // Base fill
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, width, height);
+
+  // Grain lines — sinusoidal streaks running along X
+  for (let i = 0; i < 120; i++) {
+    const y0    = (i / 120) * height;
+    const amp   = 4 + Math.random() * 8;
+    const freq  = 0.008 + Math.random() * 0.018;
+    const phase = Math.random() * Math.PI * 2;
+    const thick = 0.4 + Math.random() * 1.6;
+    const alpha = 0.04 + Math.random() * 0.13;
+    ctx.beginPath();
+    ctx.moveTo(0, y0);
+    for (let x = 1; x < width; x++) {
+      ctx.lineTo(x, y0 + Math.sin(x * freq + phase) * amp);
+    }
+    ctx.strokeStyle = grainColor;
+    ctx.lineWidth   = thick;
+    ctx.globalAlpha = alpha;
+    ctx.stroke();
+  }
+
+  // Knot rings
+  for (let k = 0; k < 2; k++) {
+    const kx = (0.2 + Math.random() * 0.6) * width;
+    const ky = (0.2 + Math.random() * 0.6) * height;
+    for (let r = 4; r < 40; r += 3) {
+      ctx.beginPath();
+      ctx.ellipse(kx, ky, r * 1.4, r * 0.7, Math.PI * 0.1, 0, Math.PI * 2);
+      ctx.strokeStyle = grainColor;
+      ctx.lineWidth   = 0.6;
+      ctx.globalAlpha = 0.07;
+      ctx.stroke();
+    }
+  }
+
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 1);
+  return tex;
+}
+
+const woodTex     = makeWoodTexture('#7a5430', '#3a1f08');
+const woodDarkTex = makeWoodTexture('#5a3a18', '#2a1008');
+
+const woodMat     = new THREE.MeshStandardMaterial({ map: woodTex,     roughness: 0.85, metalness: 0 });
+const woodDarkMat = new THREE.MeshStandardMaterial({ map: woodDarkTex, roughness: 0.9,  metalness: 0 });
+
+const tableTop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.1, 1.5), woodMat);
+tableTop.position.set(0, 0.8, 0);
+tableTop.castShadow = true; tableTop.receiveShadow = true;
+scene.add(tableTop);
+
+[ [1.2, 0.35], [-1.2, 0.35], [1.2, -0.35], [-1.2, -0.35] ].forEach(([x, z]) => {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.8, 0.1), woodDarkMat);
+  leg.position.set(x, 0.4, z); leg.castShadow = true;
+  scene.add(leg);
+});
+
+// ── REVOLVER ON TABLE ───────────────────────────────────────────────────────
+
+// ── Colt Python-style revolver — polished stainless ─────────────────────────
+const stainlessMat  = new THREE.MeshStandardMaterial({ color: 0xd0d0d8, roughness: 0.15, metalness: 1.0 });
+const stainlessDark = new THREE.MeshStandardMaterial({ color: 0xa0a0b0, roughness: 0.25, metalness: 0.95 });
+const rubberMat     = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0 });
+const redSightMat   = new THREE.MeshStandardMaterial({ color: 0xff2200, roughness: 0.2, metalness: 0, emissive: 0xaa1100, emissiveIntensity: 0.6 });
+const sightMat      = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9, metalness: 0.1 });
+const holeMat       = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1 });
+
+const revolverGroup = new THREE.Group();
+revolverGroup.position.set(0.3, 0.87, 0.05);
+revolverGroup.rotation.y = 0.35;
+
+// Barrel (cylinder tube)
+{ const m = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.58, 12), stainlessMat); m.rotation.z = Math.PI/2; m.position.set(0.2, 0.04, 0); revolverGroup.add(m); }
+// Ventilated rib on top of barrel
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.014, 0.028), stainlessDark); m.position.set(0.2, 0.066, 0); revolverGroup.add(m); }
+// 3 vent slots
+for (let i=0;i<3;i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.016,0.018), holeMat); m.position.set(0.05+i*0.16,0.068,0); revolverGroup.add(m); }
+// Underlug (full length beneath barrel)
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.04, 0.048), stainlessDark); m.position.set(0.2, 0.01, 0); revolverGroup.add(m); }
+// Ejector rod
+{ const m = new THREE.Mesh(new THREE.CylinderGeometry(0.01,0.012,0.1,8), stainlessDark); m.rotation.z=Math.PI/2; m.position.set(0.39,0.004,0); revolverGroup.add(m); }
+// Frame
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.19, 0.058), stainlessMat); m.position.set(-0.02,-0.02,0); revolverGroup.add(m); }
+// Top strap
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.022,0.05), stainlessMat); m.position.set(0.08,0.062,0); revolverGroup.add(m); }
+// Trigger guard arc
+{ const m = new THREE.Mesh(new THREE.TorusGeometry(0.055,0.009,8,16,Math.PI), stainlessMat); m.rotation.z=Math.PI/2; m.position.set(-0.01,-0.115,0); revolverGroup.add(m); }
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.009,0.07,0.009), stainlessMat); m.position.set(0.04,-0.09,0); revolverGroup.add(m); }
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.009,0.07,0.009), stainlessMat); m.position.set(-0.06,-0.09,0); revolverGroup.add(m); }
+// Trigger
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.009,0.065,0.009), stainlessMat); m.position.set(-0.01,-0.1,0); m.rotation.z=0.2; revolverGroup.add(m); }
+// Hammer body
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.032,0.055,0.042), stainlessDark); m.position.set(-0.098,0.07,0); revolverGroup.add(m); }
+// Hammer spur
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.028,0.022,0.038), stainlessDark); m.position.set(-0.112,0.1,0); m.rotation.z=-0.3; revolverGroup.add(m); }
+// Cylinder (6-sided fluted)
+const cylMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.085,0.115,6), stainlessMat);
+cylMesh.rotation.z = Math.PI/2; cylMesh.position.set(0.04,0.02,0);
+revolverGroup.add(cylMesh);
+// 6 chamber holes
+for(let i=0;i<6;i++){const a=(i/6)*Math.PI*2; const m=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.12,8),holeMat); m.rotation.z=Math.PI/2; m.position.set(0.04,Math.sin(a)*0.052,Math.cos(a)*0.052); revolverGroup.add(m);}
+// Grip (black rubber)
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.105,0.23,0.072), rubberMat); m.position.set(-0.098,-0.185,0); m.rotation.z=0.12; revolverGroup.add(m); }
+// Finger groove ridges
+for(let i=0;i<3;i++){const m=new THREE.Mesh(new THREE.BoxGeometry(0.008,0.018,0.074),new THREE.MeshStandardMaterial({color:0x111111,roughness:1})); m.position.set(-0.052,-0.13-i*0.038,0); revolverGroup.add(m);}
+// Grip butt
+{ const m = new THREE.Mesh(new THREE.CylinderGeometry(0.036,0.028,0.074,10), rubberMat); m.rotation.x=Math.PI/2; m.position.set(-0.108,-0.29,0); revolverGroup.add(m); }
+// Red fibre-optic front sight
+{ const m = new THREE.Mesh(new THREE.SphereGeometry(0.009,8,8), redSightMat); m.position.set(0.44,0.076,0); revolverGroup.add(m); }
+// Rear sight
+{ const m = new THREE.Mesh(new THREE.BoxGeometry(0.028,0.016,0.052), sightMat); m.position.set(-0.075,0.072,0); revolverGroup.add(m); }
+
+revolverGroup.castShadow = true;
+scene.add(revolverGroup);
+
+// ── COLONEL DRAVEK — detailed humanoid ──────────────────────────────────────
+
+const dravekGroup = new THREE.Group();
+dravekGroup.position.set(0.15, 0, -2.0);
+
+const uniformMat  = new THREE.MeshStandardMaterial({ color: 0x4a6a32, roughness: 0.88, metalness: 0 });
+const goldEpMat   = new THREE.MeshStandardMaterial({ color: 0xd8b850, roughness: 0.45, metalness: 0.75 });
+const capMat      = new THREE.MeshStandardMaterial({ color: 0x3a5228, roughness: 0.9,  metalness: 0 });
+const skinMat     = new THREE.MeshStandardMaterial({ color: 0xc09878, roughness: 0.82, metalness: 0 });
+const bootMat     = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.85, metalness: 0 });
+const eyeWhiteMat = new THREE.MeshStandardMaterial({ color: 0xeeeee0, roughness: 0.5 });
+const eyeDarkMat  = new THREE.MeshStandardMaterial({ color: 0x060616, roughness: 0.4 });
+const mouthMat    = new THREE.MeshStandardMaterial({ color: 0x5a1818, roughness: 0.9 });
+const handSkinMat = new THREE.MeshStandardMaterial({ color: 0xb08870, roughness: 0.85 });
+
+// Helper: create mesh, add to dravekGroup, return mesh
+function dAdd(geo, mat, x, y, z, rx, ry, rz) {
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  if (rx !== undefined) m.rotation.set(rx, ry || 0, rz || 0);
+  m.castShadow = true;
+  dravekGroup.add(m);
+  return m;
+}
+
+// ── Boots (dark, below table but visible edge)
+dAdd(new THREE.BoxGeometry(0.13, 0.15, 0.20), bootMat, -0.16, 0.075, 0.01);
+dAdd(new THREE.BoxGeometry(0.13, 0.15, 0.20), bootMat,  0.16, 0.075, 0.01);
+
+// ── Shins
+dAdd(new THREE.CylinderGeometry(0.054, 0.054, 0.31, 8), uniformMat, -0.16, 0.305, 0);
+dAdd(new THREE.CylinderGeometry(0.054, 0.054, 0.31, 8), uniformMat,  0.16, 0.305, 0);
+
+// ── Thighs (mostly behind table)
+dAdd(new THREE.CylinderGeometry(0.068, 0.062, 0.29, 8), uniformMat, -0.14, 0.605, 0);
+dAdd(new THREE.CylinderGeometry(0.068, 0.062, 0.29, 8), uniformMat,  0.14, 0.605, 0);
+
+// ── Belt
+dAdd(new THREE.BoxGeometry(0.47, 0.058, 0.24), bootMat, 0, 0.77, 0);
+// Buckle (gold)
+dAdd(new THREE.BoxGeometry(0.09, 0.055, 0.025), goldEpMat, 0, 0.77, 0.13);
+
+// ── Lower torso (waist, slightly narrower)
+dAdd(new THREE.BoxGeometry(0.38, 0.26, 0.22), uniformMat, 0, 0.92, 0);
+
+// ── Upper torso / chest (wider at top — tapered feel via two boxes)
+const dravekBody = dAdd(new THREE.BoxGeometry(0.48, 0.38, 0.26), uniformMat, 0, 1.28, 0);
+// Chest width filler (slightly wider top half)
+dAdd(new THREE.BoxGeometry(0.52, 0.18, 0.25), uniformMat, 0, 1.44, 0);
+
+// ── Gold buttons down center
+[1.48, 1.34, 1.20, 1.06].forEach(y => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.018, 6), goldEpMat);
+  m.rotation.x = Math.PI / 2;
+  m.position.set(0, y, 0.135);
+  dravekGroup.add(m);
+});
+
+// ── Medals on left chest (3 gold discs)
+[1.45, 1.35, 1.25].forEach(y => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.021, 8), goldEpMat);
+  m.rotation.x = Math.PI / 2;
+  m.position.set(-0.14, y, 0.135);
+  dravekGroup.add(m);
+});
+
+// ── Shoulder caps (rounded)
+dAdd(new THREE.SphereGeometry(0.082, 8, 6), uniformMat, -0.27, 1.455, 0);
+dAdd(new THREE.SphereGeometry(0.082, 8, 6), uniformMat,  0.27, 1.455, 0);
+
+// ── Gold epaulettes (shoulder boards)
+dAdd(new THREE.BoxGeometry(0.16, 0.033, 0.26), goldEpMat, -0.28, 1.50, 0);
+dAdd(new THREE.BoxGeometry(0.16, 0.033, 0.26), goldEpMat,  0.28, 1.50, 0);
+
+// Epaulette fringe (small cylinders hanging below)
+[-0.28, 0.28].forEach(ex => {
+  for (let fi = 0; fi < 3; fi++) {
+    const fr = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.052, 5), goldEpMat);
+    fr.position.set(ex + (fi - 1) * 0.042, 1.455, -0.075);
+    dravekGroup.add(fr);
+  }
+});
+
+// ── Arms crossed over body
+// Left upper arm — from left shoulder, angling down-forward-inward
+const dravekArmUL = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.038, 0.25, 8), uniformMat);
+dravekArmUL.position.set(-0.23, 1.30, 0.11);
+dravekArmUL.rotation.set(-0.68, 0, 0.44);
+dravekGroup.add(dravekArmUL);
+
+// Left forearm — goes nearly horizontal across body (right-ward)
+const dravekArmFL = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.032, 0.23, 8), uniformMat);
+dravekArmFL.position.set(-0.05, 1.13, 0.23);
+dravekArmFL.rotation.set(-0.28, 0, 1.42);
+dravekGroup.add(dravekArmFL);
+
+// Right upper arm
+const dravekArmUR = new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.038, 0.25, 8), uniformMat);
+dravekArmUR.position.set(0.23, 1.30, 0.11);
+dravekArmUR.rotation.set(-0.68, 0, -0.44);
+dravekGroup.add(dravekArmUR);
+
+// Right forearm — goes across body (left-ward), slightly under left forearm
+const dravekArmFR = new THREE.Mesh(new THREE.CylinderGeometry(0.037, 0.032, 0.23, 8), uniformMat);
+dravekArmFR.position.set(0.05, 1.10, 0.23);
+dravekArmFR.rotation.set(-0.28, 0, -1.42);
+dravekGroup.add(dravekArmFR);
+
+// ── Hands (small box + 3 finger suggestions)
+dAdd(new THREE.BoxGeometry(0.086, 0.058, 0.068), handSkinMat, -0.23, 1.11, 0.27);
+dAdd(new THREE.BoxGeometry(0.086, 0.058, 0.068), handSkinMat,  0.23, 1.09, 0.27);
+// Finger hints on left hand
+[-0.033, 0, 0.033].forEach(xo => {
+  dAdd(new THREE.BoxGeometry(0.016, 0.011, 0.032), handSkinMat, -0.23 + xo, 1.096, 0.296);
+});
+// Finger hints on right hand
+[-0.033, 0, 0.033].forEach(xo => {
+  dAdd(new THREE.BoxGeometry(0.016, 0.011, 0.032), handSkinMat,  0.23 + xo, 1.076, 0.296);
+});
+
+// ── Neck (cylinder)
+dAdd(new THREE.CylinderGeometry(0.065, 0.070, 0.088, 8), skinMat, 0, 1.553, 0);
+
+// ── Head (slightly wider than tall)
+const dravekHead = dAdd(new THREE.BoxGeometry(0.28, 0.32, 0.26), skinMat, 0, 1.71, 0);
+
+// ── Ears (flat boxes on sides)
+dAdd(new THREE.BoxGeometry(0.034, 0.10, 0.085), skinMat, -0.150, 1.71, 0.01);
+dAdd(new THREE.BoxGeometry(0.034, 0.10, 0.085), skinMat,  0.150, 1.71, 0.01);
+
+// ── Eyes — white sclera spheres + dark iris/pupil spheres
+// Left eye
+dAdd(new THREE.SphereGeometry(0.034, 8, 8), eyeWhiteMat, -0.077, 1.732, 0.132);
+dAdd(new THREE.SphereGeometry(0.020, 8, 8), eyeDarkMat,  -0.077, 1.732, 0.150);
+// Right eye
+dAdd(new THREE.SphereGeometry(0.034, 8, 8), eyeWhiteMat,  0.077, 1.732, 0.132);
+dAdd(new THREE.SphereGeometry(0.020, 8, 8), eyeDarkMat,   0.077, 1.732, 0.150);
+
+// ── Nose bridge (thin box)
+dAdd(new THREE.BoxGeometry(0.034, 0.048, 0.040), skinMat, 0, 1.700, 0.143);
+// Nose tip (slightly darker)
+dAdd(new THREE.BoxGeometry(0.038, 0.022, 0.030),
+  new THREE.MeshStandardMaterial({ color: 0xa07858, roughness: 0.85 }),
+  0, 1.680, 0.150);
+
+// ── Mouth — tight-lipped frown (two angled halves)
+const mL = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.013, 0.019), mouthMat);
+mL.position.set(-0.026, 1.640, 0.143); mL.rotation.z = -0.13;
+dravekGroup.add(mL);
+const mR = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.013, 0.019), mouthMat);
+mR.position.set( 0.026, 1.640, 0.143); mR.rotation.z =  0.13;
+dravekGroup.add(mR);
+
+// ── Peaked cap
+// Base band
+dAdd(new THREE.BoxGeometry(0.31, 0.118, 0.295), capMat, 0, 1.876, 0);
+// Top dome
+dAdd(new THREE.BoxGeometry(0.295, 0.055, 0.280), capMat, 0, 1.945, 0);
+// Gold band at base of cap
+dAdd(new THREE.BoxGeometry(0.315, 0.038, 0.300), goldEpMat, 0, 1.852, 0);
+// Brim (forward-jutting, dark)
+dAdd(new THREE.BoxGeometry(0.38, 0.034, 0.155), capMat, 0, 1.840, 0.098);
+
+dravekGroup.castShadow = true;
+scene.add(dravekGroup);
+
+// ── FIRST-PERSON RIGHT ARM (parented to camera) ──────────────────────────────
+
+const fpArmGroup = new THREE.Group();
+// Camera-relative: right=0.28, down=-0.42, forward=0.58
+fpArmGroup.position.set(0.28, -0.42, -0.58);
+fpArmGroup.rotation.y = 0.20; // angle slightly toward center
+camera.add(fpArmGroup);
+
+const fpSkinMat  = new THREE.MeshStandardMaterial({ color: 0xb88060, roughness: 0.82, metalness: 0 });
+const fpSleeveMat= new THREE.MeshStandardMaterial({ color: 0x4e4e6a, roughness: 0.90, metalness: 0 });
+
+// Sleeve cuff (partially visible)
+const fpSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.054, 0.17, 8), fpSleeveMat);
+fpSleeve.rotation.x = Math.PI / 2 + 0.20;
+fpSleeve.position.set(0, 0.008, 0.045);
+fpArmGroup.add(fpSleeve);
+
+// Forearm (cylinder, slightly tapered toward hand end)
+const fpForearm = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.046, 0.33, 8), fpSkinMat);
+fpForearm.rotation.x = Math.PI / 2 + 0.20;
+fpForearm.position.set(0, -0.002, -0.105);
+fpArmGroup.add(fpForearm);
+
+// Hand
+const fpHand = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.075, 0.095), fpSkinMat);
+fpHand.position.set(0, -0.010, -0.292);
+fpArmGroup.add(fpHand);
+
+// Finger suggestions (3 thin boxes)
+[-0.034, 0, 0.034].forEach(xo => {
+  const f = new THREE.Mesh(new THREE.BoxGeometry(0.020, 0.014, 0.038), fpSkinMat);
+  f.position.set(xo, -0.016, -0.330);
+  fpArmGroup.add(f);
+});
+
+// ── ANIMATION STATE ──────────────────────────────────────────────────────────
+
+let animState = 'idle'; // 'idle' | 'pulling' | 'retracting' | 'dead' | 'won'
+let animProg  = 0;
+
+const DRAVEK_ORIG_Z = dravekGroup.position.z;
+const FP_REST_X = 0.28, FP_REST_Y = -0.42, FP_REST_Z = -0.58;
+
+function easeIO(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+function startAnim(s) { animState = s; animProg = 0; }
+
+function resetFPArm() {
+  fpArmGroup.position.set(FP_REST_X, FP_REST_Y, FP_REST_Z);
+  fpArmGroup.rotation.set(0, 0.20, 0);
+}
+
+// ── BRIGHTNESS CONTROL ──────────────────────────────────────────────────────
+let bulbBrightness = 1.852; // ~14%
+const BRIGHTNESS_MIN = 0.2, BRIGHTNESS_MAX = 12, BRIGHTNESS_STEP = 0.4;
+
+function updateBrightnessUI() {
+  const pct = Math.round(((bulbBrightness - BRIGHTNESS_MIN) / (BRIGHTNESS_MAX - BRIGHTNESS_MIN)) * 100);
+  document.getElementById('brightness-val').textContent = pct + '%';
+  ambient.intensity   = 0.4 * (bulbBrightness / 2.5);
+  fillLight.intensity = 0.8 * (bulbBrightness / 2.5);
+}
+
+function adjustBrightness(dir) {
+  bulbBrightness = dir > 0
+    ? Math.min(BRIGHTNESS_MAX, bulbBrightness + BRIGHTNESS_STEP)
+    : Math.max(BRIGHTNESS_MIN, bulbBrightness - BRIGHTNESS_STEP);
+  updateBrightnessUI();
+}
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp')   { e.preventDefault(); bulbBrightness = Math.min(BRIGHTNESS_MAX, bulbBrightness + BRIGHTNESS_STEP); updateBrightnessUI(); }
+  if (e.key === 'ArrowDown') { e.preventDefault(); bulbBrightness = Math.max(BRIGHTNESS_MIN, bulbBrightness - BRIGHTNESS_STEP); updateBrightnessUI(); }
+}, { capture: true });
+
+// ── RENDER LOOP ──────────────────────────────────────────────────────────────
+
+const clock = new THREE.Clock();
+let prevT = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t  = clock.getElapsedTime();
+  const dt = t - prevT;
+  prevT = t;
+
+  // Dravek idle breathing sway
+  if (animState !== 'dead') {
+    dravekBody.rotation.z = Math.sin(t * 0.65) * 0.016;
+    dravekHead.rotation.z = Math.sin(t * 0.65 + 0.3) * 0.010;
+    dravekGroup.position.y = Math.sin(t * 0.52) * 0.013;
+  }
+
+  // Bulb flicker
+  bulbLight.intensity = bulbBrightness
+    + Math.sin(t * 8.1)  * (bulbBrightness * 0.06)
+    + Math.sin(t * 14.7) * (bulbBrightness * 0.03);
+
+  // ── FP arm: pull trigger — arm reaches forward toward gun ──
+  if (animState === 'pulling') {
+    animProg = Math.min(animProg + dt * 1.67, 1); // ~0.6s
+    const e = easeIO(animProg);
+    fpArmGroup.position.z = THREE.MathUtils.lerp(FP_REST_Z, FP_REST_Z - 0.22, e);
+    fpArmGroup.position.y = THREE.MathUtils.lerp(FP_REST_Y, FP_REST_Y - 0.07, e);
+    if (animProg >= 1) { animState = 'retracting'; animProg = 0; }
+  }
+
+  // ── FP arm: retract ──
+  if (animState === 'retracting') {
+    animProg = Math.min(animProg + dt * 1.4, 1);
+    const e = 1 - easeIO(animProg);
+    fpArmGroup.position.z = THREE.MathUtils.lerp(FP_REST_Z, FP_REST_Z - 0.22, e);
+    fpArmGroup.position.y = THREE.MathUtils.lerp(FP_REST_Y, FP_REST_Y - 0.07, e);
+    if (animProg >= 1) { animState = 'idle'; resetFPArm(); }
+  }
+
+  // ── FP arm: death — arm drops limp ──
+  if (animState === 'dead') {
+    animProg = Math.min(animProg + dt * 0.9, 1);
+    const e = 1 - Math.pow(1 - animProg, 3);
+    fpArmGroup.position.y = THREE.MathUtils.lerp(FP_REST_Y, FP_REST_Y - 0.48, e);
+    fpArmGroup.position.z = THREE.MathUtils.lerp(FP_REST_Z, FP_REST_Z + 0.14, e);
+    fpArmGroup.rotation.z = THREE.MathUtils.lerp(0, -0.72, e);
+  }
+
+  // ── FP arm: win — arm raises in relief; Dravek steps back ──
+  if (animState === 'won') {
+    animProg = Math.min(animProg + dt * 0.65, 1);
+    const e = 1 - Math.pow(1 - animProg, 3);
+    fpArmGroup.position.y = THREE.MathUtils.lerp(FP_REST_Y, FP_REST_Y + 0.20, e);
+    fpArmGroup.rotation.z = THREE.MathUtils.lerp(0,  0.13, e);
+    dravekGroup.position.z = THREE.MathUtils.lerp(DRAVEK_ORIG_Z, DRAVEK_ORIG_Z - 1.0, e);
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── MOUSE LOOK (pointer lock) ─────────────────────────────────────────────
+const CAM_ORIGIN = new THREE.Vector3(0, 1.55, 2.1);
+const pitchLimit = Math.PI / 3.5; // ~51° up/down max
+let yaw   = 0;  // left/right
+let pitch = 0;  // up/down
+
+// Initialise camera facing Dravek
+yaw   = Math.PI; // facing -Z (toward Dravek)
+pitch = -0.07;
+updateCameraRotation();
+
+function updateCameraRotation() {
+  camera.position.copy(CAM_ORIGIN);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+}
+
+// Click canvas to lock pointer
+const canvas3d = renderer.domElement;
+canvas3d.addEventListener('click', () => {
+  if (document.pointerLockElement !== canvas3d) {
+    canvas3d.requestPointerLock();
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  const locked = document.pointerLockElement === canvas3d;
+  document.getElementById('look-hint').style.opacity = locked ? '0' : '1';
+});
+
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== canvas3d) return;
+  const sens = 0.0018;
+  yaw   -= e.movementX * sens;
+  pitch -= e.movementY * sens;
+  pitch  = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
+  updateCameraRotation();
+});
+
+// Touch look (drag) for mobile
+let lastTouch = null;
+canvas3d.addEventListener('touchstart', e => { lastTouch = e.touches[0]; }, { passive: true });
+canvas3d.addEventListener('touchmove', e => {
+  if (!lastTouch) return;
+  const t = e.touches[0];
+  const dx = t.clientX - lastTouch.clientX;
+  const dy = t.clientY - lastTouch.clientY;
+  const sens = 0.004;
+  yaw   -= dx * sens;
+  pitch -= dy * sens;
+  pitch  = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
+  updateCameraRotation();
+  lastTouch = t;
+}, { passive: true });
+canvas3d.addEventListener('touchend', () => { lastTouch = null; }, { passive: true });
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GAME NARRATIVE DATA
+// ═══════════════════════════════════════════════════════════════════════════
+
+const NARRATIVES = {
+  opening: [
+    {
+      text: "The room is bare concrete. A single bulb burns overhead — no shade, no warmth, just hard light and harder shadows. Your wrists are zip-tied behind the chair. Across the steel table, a man in a pressed uniform sets a revolver down. Gently. Precisely. He does not sit.",
+      dravek: "You have something I need. This is how I determine how badly you want to keep it. The gun is already on the table."
+    },
+    {
+      text: "Interrogation Room 4. No windows. The floor is cold and the light is colder. He opens a folder, reads something, closes it. Sets the revolver between you as if placing a document for your review. He looks at you once. Only once.",
+      dravek: "I have done this before. You have not. That is the only thing you need to understand right now."
+    },
+    {
+      text: "Blood on the concrete floor — not yours. Not yet. The bare bulb overhead hums at a frequency you feel in your back teeth. He loads a single round into the cylinder, shows it to you, then closes it with a practiced turn of the wrist.",
+      dravek: "Six chambers. One bullet. Simple mathematics. You may talk whenever you like. Until then — pick it up."
+    },
+  ],
+
+  dravek_after_pull: [
+    [
+      "One chamber down. You are still here. Pick it up again.",
+      "The odds were in your favor. They are less so now. You know what you need to say.",
+      "Good. You have proven you are not a coward. That is the least interesting thing about you.",
+    ],
+    [
+      "One in four, now. The mathematics grow more personal.",
+      "Still here. Good. I would hate for this to end before we properly understand each other.",
+      "Two down. Most men talk by this point. Most men are wiser than you.",
+    ],
+    [
+      "Halfway through. You are doing very well. That should not comfort you.",
+      "Three pulls. I have seen men laugh here. I have seen them weep. You do neither. That is unusual.",
+      "Loyal. Or stubborn. In my experience, they feel identical until one of them kills you.",
+    ],
+    [
+      "Two chambers remain. One holds your answer. The other holds mine.",
+      "Four pulls. You are either brave or certain I won't let this end badly. Think carefully about which one is true.",
+      "Almost finished. Whatever you are protecting — I hope it is worth this.",
+    ],
+    [
+      "One chamber left. Whatever is in it has been waiting for you since before you walked in here.",
+      "The last one. I did not expect you to reach it. That is not a compliment.",
+      "This is it. I want you to know that I respect what you have endured. That respect will not save you.",
+    ],
+  ],
+
+  click_moments: [
+    "The hammer falls. A hollow click — sharp, clean, nothing. You exhale through your teeth.",
+    "Metal on metal. The empty chamber rotates away. You are still in your body.",
+    "Click. Just a click. The sound fills the concrete room like a small verdict.",
+    "Nothing fires. The world does not end. Not yet.",
+    "The trigger gives. The cylinder turns. Silence — and then the bulb hums again.",
+    "Empty. The word arrives slowly. You are still in the chair.",
+  ],
+
+  death_moment: [
+    "The sound is immense. The bulb swings once. The chair tips back.",
+    "A single deafening moment tears through everything. The concrete walls do not move. The light does not change.",
+    "The shot fills the room completely. Then it doesn't.",
+  ],
+
+  dravek_death_final: [
+    "A waste.",
+    "You could have talked.",
+    "I'll find someone else.",
+  ],
+
+  win: [
+    {
+      text: "Six pulls. Six empty chambers. You set the gun down. Your hands are shaking now — finally, they are shaking. Dravek stands very still on the other side of the table. A long silence. He picks up his folder.",
+      dravek: "Walk out. Don't come back."
+    },
+    {
+      text: "You survived it. All of it. You lower the revolver onto the steel table and let go. He watches you stand. Something crosses his face — not admiration, exactly. Something colder than admiration.",
+      dravek: "Remarkable. Inconvenient. But remarkable. You are free to go."
+    },
+    {
+      text: "The last chamber was empty. You are still alive, which means you won something tonight — though you're not sure what. He folds his hands. Studies you for a long moment.",
+      dravek: "I don't know what you are protecting. But it is worth more to you than your life. That is either heroic or idiotic. Go."
+    },
+  ],
+};
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GAME STATE & LOGIC
+// ═══════════════════════════════════════════════════════════════════════════
+
+let state = {};
+
+function newGame() {
+  const bulletPos = Math.floor(Math.random() * 6);
+  state = { bulletPos, currentChamber: 0, pulls: 0, survived: 0, active: true };
+
+  animState = 'idle';
+  animProg  = 0;
+  resetFPArm();
+  dravekGroup.position.z = DRAVEK_ORIG_Z;
+  dravekGroup.position.y = 0;
+
+  document.getElementById('overlay').classList.remove('visible');
+  document.getElementById('blood').classList.remove('show');
+  document.getElementById('triggerBtn').disabled = false;
+
+  renderChambers();
+  updateStats();
+  updateOdds();
+
+  const opening = pick(NARRATIVES.opening);
+  setNarrative(opening.text, opening.dravek, false);
+}
+
+function renderChambers() {
+  const el = document.getElementById('chambers');
+  el.innerHTML = '';
+  for (let i = 0; i < 6; i++) {
+    const div = document.createElement('div');
+    div.className = 'chamber';
+    if (i < state.currentChamber) {
+      div.classList.add('fired');
+      if (i === state.bulletPos && !state.active) div.classList.add('loaded');
+    } else if (i === state.currentChamber) {
+      div.classList.add('current');
+    }
+    el.appendChild(div);
+  }
+}
+
+function updateStats() {
+  document.getElementById('statPull').textContent     = state.pulls;
+  document.getElementById('statSurvived').textContent = state.survived;
+  const rem = 6 - state.currentChamber;
+  document.getElementById('statOdds').textContent = rem > 0 ? `1 in ${rem}` : '—';
+}
+
+function updateOdds() {
+  const rem = 6 - state.currentChamber;
+  const pct = rem > 0 ? ((1 / rem) * 100).toFixed(1) : '0';
+  document.getElementById('chanceText').textContent = `${pct}%`;
+}
+
+function setNarrative(text, dravekLine, fade = true) {
+  const narEl    = document.getElementById('narrative-text');
+  const dravekEl = document.getElementById('dravek-line');
+  const speechEl = document.getElementById('dravek-speech-text');
+
+  const apply = () => {
+    narEl.textContent = text;
+    if (dravekLine) {
+      speechEl.textContent = dravekLine;
+      dravekEl.style.display = 'block';
+      narEl.classList.add('has-dravek');
+    } else {
+      dravekEl.style.display = 'none';
+      narEl.classList.remove('has-dravek');
+    }
+  };
+
+  if (fade) {
+    narEl.classList.add('fade');
+    setTimeout(() => { apply(); narEl.classList.remove('fade'); }, 400);
+  } else {
+    apply();
+  }
+}
+
+function flashScreen() {
+  const f = document.getElementById('flash');
+  f.classList.remove('bang');
+  void f.offsetWidth;
+  f.classList.add('bang');
+}
+
+function pullTrigger() {
+  if (!state.active) return;
+  const btn = document.getElementById('triggerBtn');
+  btn.disabled = true;
+  state.pulls++;
+
+  const isBullet = state.currentChamber === state.bulletPos;
+
+  startAnim('pulling');
+
+  setTimeout(() => {
+    if (isBullet) {
+      flashScreen();
+      startAnim('dead');
+      state.active = false;
+      state.currentChamber++;
+      renderChambers();
+      setNarrative(pick(NARRATIVES.death_moment), null);
+
+      setTimeout(() => {
+        document.getElementById('blood').classList.add('show');
+        setTimeout(() => showOutcome('dead'), 500);
+      }, 700);
+
+    } else {
+      state.survived++;
+      state.currentChamber++;
+
+      const pullIdx  = Math.min(state.pulls - 1, NARRATIVES.dravek_after_pull.length - 1);
+      const click    = pick(NARRATIVES.click_moments);
+      const dravLine = pick(NARRATIVES.dravek_after_pull[pullIdx]);
+
+      setNarrative(click, dravLine);
+
+      if (state.currentChamber === 6) {
+        state.active = false;
+        startAnim('won');
+        setTimeout(() => showOutcome('alive'), 1600);
+      } else {
+        renderChambers();
+        updateStats();
+        updateOdds();
+        setTimeout(() => { btn.disabled = false; }, 950);
+      }
+    }
+  }, 350);
+}
+
+function showOutcome(type) {
+  const overlay = document.getElementById('overlay');
+  const title   = document.getElementById('outcomeTitle');
+  const story   = document.getElementById('outcomeStory');
+
+  if (type === 'dead') {
+    title.textContent = 'You Are Dead';
+    title.className   = 'outcome-title dead';
+    const line = pick(NARRATIVES.dravek_death_final);
+    story.innerHTML = `<span class="dravek-block-out"><span class="dravek-label">COLONEL DRAVEK</span><em class="dravek-speech">${line}</em></span>`;
+  } else {
+    title.textContent = 'You Survived';
+    title.className   = 'outcome-title alive';
+    const win = pick(NARRATIVES.win);
+    story.innerHTML = `${win.text}<span class="dravek-block-out"><span class="dravek-label">COLONEL DRAVEK</span><em class="dravek-speech">${win.dravek}</em></span>`;
+  }
+
+  const survivedPulls = type === 'dead' ? state.pulls - 1 : state.pulls;
+  let prob = 1;
+  for (let i = 0; i < survivedPulls; i++) prob *= (5 - i) / (6 - i);
+  const pct = (prob * 100).toFixed(1);
+
+  document.getElementById('finalPulls').textContent = state.pulls;
+  document.getElementById('finalOdds').textContent  = `${pct}%`;
+  overlay.classList.add('visible');
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+newGame();
+</script>
+</body>
+</html>
